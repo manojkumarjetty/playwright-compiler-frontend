@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Playwright Online Compiler</title>
+    <title>Playwright Online Compiler & Live Viewer</title>
     <style>
         * { box-sizing: border-box; }
         body { 
@@ -30,7 +30,6 @@
         }
         button:hover { background: #005999; }
 
-        /* Main 2-Column Workspace Layout */
         .workspace { 
             display: grid; 
             grid-template-columns: 1fr 1fr; 
@@ -39,7 +38,6 @@
             overflow: hidden; 
         }
 
-        /* Left Column: Stacked Editor & Console */
         .left-column { 
             display: flex; 
             flex-direction: column; 
@@ -63,9 +61,11 @@
             font-weight: bold;
             color: #bbbbbb;
             border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        /* Textarea Editor & Output Console with scrollbars */
         textarea, pre { 
             flex: 1; 
             background: #1e1e1e; 
@@ -76,11 +76,10 @@
             font-family: 'Courier New', Courier, monospace; 
             font-size: 13px; 
             resize: none; 
-            overflow: auto; /* Ensures scrollbars appear when content overflows */
+            overflow: auto;
             line-height: 1.5;
         }
 
-        /* Right Column: Live Browser View */
         .right-column {
             display: flex;
             flex-direction: column;
@@ -97,13 +96,14 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: auto; /* Scrollbars for large screenshots */
+            overflow: auto;
             position: relative;
             padding: 10px;
         }
 
         .browser-screen img {
             max-width: 100%;
+            max-height: 100%;
             border: 1px solid #444;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
@@ -114,32 +114,43 @@
             text-align: center;
             padding: 20px;
         }
+
+        .step-controls {
+            font-size: 12px;
+            color: #888;
+        }
     </style>
 </head>
 <body>
 
     <header>
-        <h2>Playwright Online Compiler & Live Viewer</h2>
+        <h2>Playwright Online Compiler & Step Viewer</h2>
         <button onclick="runCode()">▶ Run Script</button>
     </header>
 
     <div class="workspace">
-        <!-- Left Column (Editor top, Console bottom) -->
         <div class="left-column">
             <div class="pane-box" style="flex: 1.2;">
                 <div class="pane-title">JavaScript & Playwright Code Editor</div>
-                <textarea id="codeEditor">// Write your Playwright code here
+                <textarea id="codeEditor">// Write your Playwright code here (take snapshots at each step)
 const { chromium } = require('playwright');
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newPage();
-  await context.goto('https://example.com');
+  const context = await browser.newContext();
+  const page = await context.newPage();
   
-  console.log('Page title is:', await context.title());
+  await page.goto('https://example.com');
+  // Capture step 1
+  await page.screenshot({ path: 'screenshot_1.png' });
+  console.log('Navigated to example.com');
 
-  // Take a screenshot to view in the right browser pane
-  await context.screenshot({ path: 'screenshot_' + Date.now() + '.png' });
+  // Perform interaction or click
+  const heading = await page.locator('h1').textContent();
+  console.log('Heading text:', heading);
+  
+  // Capture final step
+  await page.screenshot({ path: 'screenshot_2.png' });
   
   await browser.close();
 })();</textarea>
@@ -151,27 +162,34 @@ const { chromium } = require('playwright');
             </div>
         </div>
 
-        <!-- Right Column (Live Browser View / Screenshot Result) -->
         <div class="right-column">
-            <div class="pane-title">Live Browser View (Chromium Execution Snapshot)</div>
+            <div class="pane-title">
+                <span>Browser Interaction Steps</span>
+                <span id="stepIndicator" class="step-controls">Step: 0 / 0</span>
+            </div>
             <div class="browser-screen" id="browserScreen">
-                <div class="placeholder-text">Run your script to capture and view the browser execution state here.</div>
+                <div class="placeholder-text">Run your script with <code>page.screenshot({ path: 'screenshot_1.png' })</code> commands to view step-by-step browser interactions here.</div>
             </div>
         </div>
     </div>
 
     <script>
+        let currentScreenshots = [];
+        let currentIndex = 0;
+
         async function runCode() {
             const code = document.getElementById('codeEditor').value;
             const outputBox = document.getElementById('output');
             const browserScreen = document.getElementById('browserScreen');
+            const stepIndicator = document.getElementById('stepIndicator');
 
-            outputBox.innerText = "Running code on remote container...";
-            browserScreen.innerHTML = '<div class="placeholder-text">Executing browser actions...</div>';
+            outputBox.innerText = "Running script on cloud container...";
+            browserScreen.innerHTML = '<div class="placeholder-text">Executing automation steps...</div>';
+            stepIndicator.innerText = "Step: 0 / 0";
 
             try {
                 // REPLACE WITH YOUR ACTUAL RENDER BACKEND URL BELOW
-                const response = await fetch('https://playwright-compiler-backend.onrender.com/run', {
+                const response = await fetch('https://YOUR-RENDER-BACKEND-URL.onrender.com/run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ code })
@@ -179,16 +197,36 @@ const { chromium } = require('playwright');
                 const result = await response.json();
                 
                 outputBox.innerText = result.output;
+                currentScreenshots = result.screenshots || [];
 
-                if (result.screenshot) {
-                    browserScreen.innerHTML = `<img src="data:image/png;base64,${result.screenshot}" alt="Browser Execution View" />`;
+                if (currentScreenshots.length > 0) {
+                    currentIndex = 0;
+                    renderScreenshot();
                 } else {
-                    browserScreen.innerHTML = '<div class="placeholder-text">Execution finished. No screenshot was captured in this script. (Tip: Use <code>await page.screenshot({ path: "screenshot.png" })</code> in your code).</div>';
+                    browserScreen.innerHTML = '<div class="placeholder-text">Execution complete. No screenshots found. Make sure to include <code>await page.screenshot({ path: "screenshot_1.png" })</code> in your code.</div>';
                 }
             } catch (err) {
                 outputBox.innerText = "Error connecting to backend: " + err.message;
                 browserScreen.innerHTML = '<div class="placeholder-text" style="color: #ff6b6b;">Connection Failed</div>';
             }
+        }
+
+        function renderScreenshot() {
+            const browserScreen = document.getElementById('browserScreen');
+            const stepIndicator = document.getElementById('stepIndicator');
+            
+            if (currentScreenshots.length === 0) return;
+
+            browserScreen.innerHTML = `<img src="data:image/png;base64,${currentScreenshots[currentIndex]}" alt="Step ${currentIndex + 1}" />`;
+            stepIndicator.innerText = `Step ${currentIndex + 1} of ${currentScreenshots.length} (Click image to advance)`;
+            
+            // Allow clicking the image to cycle through subsequent steps
+            browserScreen.onclick = () => {
+                if (currentScreenshots.length > 1) {
+                    currentIndex = (currentIndex + 1) % currentScreenshots.length;
+                    renderScreenshot();
+                }
+            };
         }
     </script>
 </body>
